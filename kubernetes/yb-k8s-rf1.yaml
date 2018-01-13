@@ -1,0 +1,152 @@
+apiVersion: v1
+kind: Service
+metadata:
+  # This is the name of this headless service.
+  name: yugabyte
+  labels:
+    app: yugabyte
+spec:
+  clusterIP: None
+  ports:
+  - name: ui
+    port: 7000
+  - name: rpc-port
+    port: 7100
+  selector:
+    app: yugabyte
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: yb-master-ep
+  labels:
+    app: yugabyte
+spec:
+  ports:
+  - name: ui
+    port: 7000
+  - name: rpc-port
+    port: 7100
+  selector:
+    app: yugabyte
+---
+apiVersion: apps/v1beta2
+kind: StatefulSet
+metadata:
+  name: yb-master
+  labels:
+    app: yugabyte
+spec:
+  serviceName: yugabyte
+  replicas: 1
+  selector:
+    matchLabels:
+      app: yugabyte
+  template:
+    metadata:
+      labels:
+        app: yugabyte
+    spec:
+      containers:
+      - name: yb-master
+        image: yugabytedb/yugabyte:latest
+        imagePullPolicy: Always
+        command:
+          - "/home/yugabyte/bin/yb-master"
+          - "--use_hybrid_clock=false"
+          - "--fs_data_dirs=/mnt/data0"
+          - "--replication_factor=1"
+          - "--master_addresses=yb-master-0.yugabyte.default.svc.cluster.local:7100"
+        ports:
+        - containerPort: 7000
+          name: master-ui
+        - containerPort: 7100
+          name: master-rpc
+        # These volume mounts are persistent. They are like inline claims,
+        # but not exactly because the names need to match exactly one of
+        # the stateful pod volumes.
+#        volumeMounts:
+#        - name: datadir
+#          mountPath: /mnt/data0
+  # These are converted to volume claims by the controller
+  # and mounted at the paths mentioned above.
+  # do not use these in production until ssd GCEPersistentDisk or other ssd pd
+#  volumeClaimTemplates:
+#  - metadata:
+#      name: datadir
+#    spec:
+#      accessModes: [ "ReadWriteOnce" ]
+#      resources:
+#        requests:
+#          storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: yb-tserver-ep
+  labels:
+    app: yugabyte
+spec:
+  ports:
+  - name: ui
+    port: 9000
+  - name: rpc-port
+    port: 9100
+  - name: cql
+    port: 9042
+  - name: redis
+    port: 6379
+  selector:
+    app: yugabyte
+---
+apiVersion: apps/v1beta2
+kind: StatefulSet
+metadata:
+  name: yb-tserver
+  labels:
+    app: yugabyte
+spec:
+  serviceName: yugabyte
+  replicas: 1
+  selector:
+    matchLabels:
+      app: yugabyte
+  template:
+    metadata:
+      labels:
+        app: yugabyte
+    spec:
+      containers:
+      - name: yb-tserver
+        image: yugabytedb/yugabyte:latest
+        imagePullPolicy: Always
+        command:
+          - "/home/yugabyte/bin/yb-tserver"
+          - "--fs_data_dirs=/mnt/data0"
+          - "--use_hybrid_clock=false"
+          - "--tserver_master_addrs=yb-master-0.yugabyte.default.svc.cluster.local:7100"
+#        command: [ "bash", "-c", "sleep 10000" ]
+        ports:
+        - containerPort: 9000
+          name: tserver-ui
+        - containerPort: 9100
+          name: tserver-rpc
+        - containerPort: 9042
+          name: cql
+        # These volume mounts are persistent. They are like inline claims,
+        # but not exactly because the names need to match exactly one of
+        # the stateful pod volumes.
+#        volumeMounts:
+#        - name: datadir
+#          mountPath: /mnt/data0
+  # These are converted to volume claims by the controller
+  # and mounted at the paths mentioned above.
+  # do not use these in production until ssd GCEPersistentDisk or other ssd pd
+#  volumeClaimTemplates:
+#  - metadata:
+#      name: datadir
+#    spec:
+#      accessModes: [ "ReadWriteOnce" ]
+#      resources:
+#        requests:
+#          storage: 10Gi
