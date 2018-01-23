@@ -6,34 +6,15 @@
 #    - a service to expose end-points to the outside world
 #    - the stateful set itself
 #
-# Using YB with k2s
+# Using YB with k8s
 #    - Create cluster    : kubectl apply -f yugabyte-k8s-statefulset.yaml
 #    - List the pods     : kubectl get pods
 #    - Run cqlsh         : kubectl exec -it tserver-0 /home/yugabyte/bin/cqlsh
-#    - Run Redis cli     : kubectl exec -it tserver-0 /home/yugabyte/bin/rediscli
+#    - Run Redis cli     : kubectl exec -it tserver-0 /home/yugabyte/bin/redis-cli
 #    - Connect to the ui : kubectl port-forward master-0 7000
 #    - Destroy cluster   : kubectl delete -f yugabyte-k8s-statefulset.yaml
 #
 
-apiVersion: v1
-kind: Service
-metadata:
-  # This service exposes the endpoint used by tservers (in the yb-tservers service) to perform RPCs
-  # against the master leader.
-  name: yb-masters-ep
-  labels:
-    app: yugabyte
-spec:
-  ports:
-  # The master UI port which gives an overview of the cluster.
-  - name: ui
-    port: 7000
-  # The master's RPC port.
-  - name: rpc-port
-    port: 7100
-  selector:
-    app: yugabyte
----
 apiVersion: v1
 kind: Service
 metadata:
@@ -43,7 +24,7 @@ metadata:
   # https://kubernetes.io/docs/tutorials/stateful-application/basic-stateful-set/
   name: yb-masters
   labels:
-    app: yugabyte
+    app: yb-master
 spec:
   clusterIP: None
   ports:
@@ -52,25 +33,25 @@ spec:
   - name: rpc-port
     port: 7100
   selector:
-    app: yugabyte
+    app: yb-master
 ---
 apiVersion: apps/v1beta2
 kind: StatefulSet
 metadata:
   name: master
   labels:
-    app: yugabyte
+    app: yb-master
 spec:
   serviceName: yb-masters
   podManagementPolicy: "Parallel"
   replicas: 3
   selector:
     matchLabels:
-      app: yugabyte
+      app: yb-master
   template:
     metadata:
       labels:
-        app: yugabyte
+        app: yb-master
     spec:
       affinity:
         # TODO: set the anti-affinity selector scope to masters only here.
@@ -83,7 +64,7 @@ spec:
                 - key: app
                   operator: In
                   values:
-                  - yugabyte
+                  - yb-master
               topologyKey: kubernetes.io/hostname
       containers:
       - name: master
@@ -92,7 +73,8 @@ spec:
         command:
           - "/home/yugabyte/bin/yb-master"
           - "--fs_data_dirs=/mnt/data0"
-          - "--master_addresses=master-0.yb-masters.default.svc.cluster.local:7100,master-1.yb-masters.default.svc.cluster.local:7100,master-2.yb-masters.default.svc.cluster.local:7100"
+          - "--master_addresses=yb-masters.default.svc.cluster.local:7100"
+          - "--master_replication_factor=3"
 #        command: [ "bash", "-c", "sleep 10000" ]
         ports:
         - containerPort: 7000
@@ -134,35 +116,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  # This service exposes the endpoint used by external clients to talk to YugaByte.
-  name: yb-tservers-ep
-  labels:
-    app: yugabyte
-spec:
-  ports:
-  # The tserver UI port which gives an overview of the cluster.
-  - name: ui
-    port: 9000
-  # The tserver RPC port for communication inside the YugaByte DB.
-  - name: rpc-port
-    port: 9100
-  # The default port on which the Cassandra clients connect.
-  - name: cql
-    port: 9042
-  # The default port on which the Redis clients connect.
-  - name: redis
-    port: 6379
-  selector:
-    app: yugabyte
----
-apiVersion: v1
-kind: Service
-metadata:
   # This is a "headless" service for the yb-tserver which exists to allow discovery of the set of
   # member pods (tservers).
   name: yb-tservers
   labels:
-    app: yugabyte
+    app: yb-tserver
 spec:
   clusterIP: None
   ports:
@@ -171,25 +129,25 @@ spec:
   - name: rpc-port
     port: 7100
   selector:
-    app: yugabyte
+    app: yb-tserver
 ---
 apiVersion: apps/v1beta2
 kind: StatefulSet
 metadata:
   name: tserver
   labels:
-    app: yugabyte
+    app: yb-tserver
 spec:
   serviceName: yb-tservers
   podManagementPolicy: "Parallel"
   replicas: 3
   selector:
     matchLabels:
-      app: yugabyte
+      app: yb-tserver
   template:
     metadata:
       labels:
-        app: yugabyte
+        app: yb-tserver
     spec:
       affinity:
         # TODO: set the anti-affinity selector scope to tservers only here.
@@ -202,7 +160,7 @@ spec:
                 - key: app
                   operator: In
                   values:
-                  - yugabyte
+                  - yb-tserver
               topologyKey: kubernetes.io/hostname
       containers:
       - name: tserver
