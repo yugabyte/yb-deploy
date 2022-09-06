@@ -1,2 +1,2 @@
 # yb-deploy
-Deployment integrations for YugaByte DB
+Deployment integrations for YugabyteDB
